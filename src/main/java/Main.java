@@ -30,9 +30,12 @@ public class Main {
     private static void handleClient(Socket clientSocket) throws IOException {
         System.out.println("Accepted connection from " + clientSocket.getInetAddress() + ":" + clientSocket.getPort());
         String request = readRequest(clientSocket.getInputStream());
-        String path = extractPath(request);
+        // Split the request into lines (using CRLF as the separator).
+        String[] requestLines = request.split("\r\n");
+        String path = extractPath(requestLines);
         System.out.println("Requested path: " + path);
-        String response = createResponse(path);
+        String response = createResponse(path, requestLines);
+        System.out.println("Response: " + response);
         sendResponse(clientSocket.getOutputStream(), response);
     }
 
@@ -44,22 +47,17 @@ public class Main {
     }
 
 
-    private static String extractPath(String request) {
-        // Split the request into lines (using CRLF as the separator).
-        String[] requestLines = request.split("\r\n");
-        if (requestLines.length > 0) {
-            // The first line should be something like "GET /index.html HTTP/1.1"
-            String[] firstLine = requestLines[0].split(" ");
-            if (firstLine.length > 1) {
-                // Strip any extraneous whitespace.
-                return firstLine[1].trim();
-            }
+    private static String extractPath(String[] requestLines) {
+        String requestLine = requestLines[0];
+        String[] parts = requestLine.split(" ");
+        if (parts.length > 1) {
+            return parts[1].trim();
         }
         return "";
     }
 
 
-    private static String createResponse(String path) {
+    private static String createResponse(String path, String[] requestLines) {
         String response = "";
         // Return 200 OK if the path is "/" or "/index.html"; 404 otherwise.
         if (path.equals("/") || path.equals("/index.html")) {
@@ -76,6 +74,26 @@ public class Main {
             response += "\r\n";
             response += echoString;
             return response;
+        } else if (path.startsWith("/user-agent")) {
+            String[] userAgentLines = requestLines[1];
+            // Iterate over header lines (everything after the request line).
+            for (String line : userAgentLines) {
+                // An empty line marks end of headers.
+                if (line == "")
+                    break;
+                // Look for the User-Agent header (case-insensitive).
+                if (line.toLowerCase().startsWith("user-agent:")) {
+                    // Split on ":", then strip whitespace.
+                    String[] parts = line.split(":");
+                    String userAgent = parts[1].trim();
+                    break;
+                }
+            }
+            int contentLength = userAgent.getBytes().length;
+            response = "HTTP/1.1 200 OK\r\n";
+            response += "Content-Type: text/plain\r\n";
+            response += "Content-Length: " + content_length + "\r\n";
+            response += "\r\n";
         } else {
             response = "HTTP/1.1 404 Not Found\r\n\r\n";
             return response;
