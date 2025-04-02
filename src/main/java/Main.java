@@ -66,6 +66,7 @@ public class Main {
             // Extract the string following "/echo/"
             String echoString = path.substring("/echo/".length());
             // Determine byte length of body (assumes UTF-8 encoding).
+            int contentLength = echoString.getBytes().length;
             // Build response with required headers.
             response = "HTTP/1.1 200 OK\r\n";
             response += "Content-Type: text/plain\r\n";
