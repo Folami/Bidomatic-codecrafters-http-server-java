@@ -96,7 +96,9 @@ public class Main {
             // 2. Extract HTTP method & path from the request-line.
             RequestInfo reqInfo = extractPath(requestLines);
             System.out.println("Method: " + reqInfo.method + " Path: " + reqInfo.path);
-            handlePostMethod(requestLines, reqInfo, reader);
+            if ("POST".equals(reqInfo.method) && reqInfo.path.startsWith("/files/")) {
+                handlePostMethod(requestLines, reqInfo, reader);
+            }
             // 3. Create full HTTP response as a byte array.
             byte[] response = createResponse(reqInfo);
             // 4. Send the response to the client.
@@ -142,28 +144,26 @@ public class Main {
     }
 
 
-    private static void handlePostMethod(String[] requestLines, RequestInfo reqInfo, BufferedReader reader) {
+    private static void handlePostMethod(String[] requestLines, RequestInfo reqInfo, BufferedReader reader) throws IOException {
         // 2.1 If the request is a POST to /files, read the request body.
-        if ("POST".equals(reqInfo.method) && reqInfo.path.startsWith("/files/")) {
-            int contentLength = 0;
-            // Look for Content-Length header in the requestLines.
-            for (String header : requestLines) {
-                if (header.toLowerCase().startsWith("content-length:")) {
-                    try {
-                        contentLength = Integer.parseInt(header.split(":", 2)[1].trim());
-                    } catch (NumberFormatException nfe) {
-                        contentLength = 0;
-                    }
-                    break;
+        int contentLength = 0;
+        // Look for Content-Length header in the requestLines.
+        for (String header : requestLines) {
+            if (header.toLowerCase().startsWith("content-length:")) {
+                try {
+                    contentLength = Integer.parseInt(header.split(":", 2)[1].trim());
+                } catch (NumberFormatException nfe) {
+                    contentLength = 0;
                 }
+                break;
             }
-            // Read exactly contentLength characters from the reader.
-            // (Assuming the POST body is ASCII/text and Content-Length equals the number of characters.)
-            char[] bodyChars = new char[contentLength];
-            int read = reader.read(bodyChars, 0, contentLength);
-            if (read > 0) {
-                reqInfo.body = new String(bodyChars, 0, read);
-            }
+        }
+        // Read exactly contentLength characters from the reader.
+        // (Assuming the POST body is ASCII/text and Content-Length equals the number of characters.)
+        char[] bodyChars = new char[contentLength];
+        int read = reader.read(bodyChars, 0, contentLength);
+        if (read > 0) {
+            reqInfo.body = new String(bodyChars, 0, read);
         }
     }
     
