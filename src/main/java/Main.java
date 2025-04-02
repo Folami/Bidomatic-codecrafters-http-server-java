@@ -48,12 +48,20 @@ public class Main {
 
 
     private static String extractPath(String[] requestLines) {
-        String requestLine = requestLines[0];
-        String[] parts = requestLine.split(" ");
-        if (parts.length > 1) {
-            return parts[1].trim();
+        // Default the path to empty if something goes wrong.
+        String path = "";
+        if (requestLines.length > 0) {
+            // The first line should be something like "GET /index.html HTTP/1.1"
+            String requestLine = requestLines[0];
+            String[] parts = requestLine.split(" ");
+            if (parts.length >= 2) {
+                // Strip any extraneous whitespace.
+                path = parts[1].trim();
+            } else {
+                path = "";
+            }
         }
-        return "";
+        return path;
     }
 
 
