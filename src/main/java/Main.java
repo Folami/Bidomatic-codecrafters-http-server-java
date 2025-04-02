@@ -28,6 +28,7 @@ public class Main {
         System.out.println("Accepted connection from " + clientSocket.getInetAddress() + ":" + clientSocket.getPort());
         String request = readRequest(clientSocket.getInputStream());
         String path = extractPath(request);
+        System.out.println("Requested path: " + path);
         String response = createResponse(path);
         sendResponse(clientSocket.getOutputStream(), response);
     }
@@ -53,11 +54,25 @@ public class Main {
     }
 
     private static String createResponse(String path) {
+        String response = "";
         // Return 200 OK if the path is "/" or "/index.html"; 404 otherwise.
         if (path.equals("/") || path.equals("/index.html")) {
             return "HTTP/1.1 200 OK\r\n\r\n";
+        } else if (path.startsWith("/echo/")) {
+            // Extract the string following "/echo/"
+            String echoString = path.substring("/echo/".length());
+            // Determine byte length of body (assumes UTF-8 encoding).
+            int contentLength = echoString.getBytes("UTF-8").length;
+            // Build response with required headers.
+            response = "HTTP/1.1 200 OK\r\n";
+            response += "Content-Type: text/plain\r\n";
+            response += "Content-Length: " + contentLength + "\r\n";
+            response += "\r\n";
+            response += echoString;
+            return response;
         } else {
-            return "HTTP/1.1 404 Not Found\r\n\r\n";
+            response = "HTTP/1.1 404 Not Found\r\n\r\n";
+            return response;
         }
     }
 
