@@ -257,7 +257,7 @@ public class Main {
             responseStream.write(response.getBytes(StandardCharsets.UTF_8));
             return;
         }
-        String filename = path.substring("/files/".length());
+        String filename = httpPath.substring("/files/".length());
         File file = new File(filesDirectory, filename);
         if ("GET".equals(httpMethod)) {
             handleHttpGetMethod(file);
@@ -270,7 +270,7 @@ public class Main {
     }
 
 
-    private static void handleHttpGetMethod(File file) {
+    private static void handleHttpGetMethod(File file, ByteArrayOutputStream responseStream) {
         if (file.exists() && file.isFile()) {
             byte[] fileBytes = readFileBytes(file);
             String responseHeader = "HTTP/1.1 200 OK\r\n";
