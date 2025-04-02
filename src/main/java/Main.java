@@ -1,5 +1,7 @@
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -32,7 +34,11 @@ public class Main {
     private static void handleClient(Socket clientSocket) {
         try (InputStream inputStream = clientSocket.getInputStream();
              OutputStream outputStream = clientSocket.getOutputStream()) {
-            String request = readRequest(inputStream);
+            String request = readHttpRequest(inputStream);
+            if (request == null) {
+                System.err.println("Error reading request, connection closed prematurely.");
+                return; // Exit if request is null (error in reading)
+            }
             String[] requestLines = request.split("\r?\n");
             String path = extractPath(requestLines);
             System.out.println("Requested path: " + path);
@@ -43,11 +49,23 @@ public class Main {
         }
     }
 
-    private static String readRequest(InputStream inputStream) throws IOException {
-        byte[] buffer = new byte[1024];
-        int bytesRead = inputStream.read(buffer);
-        return new String(buffer, 0, bytesRead);
+
+    private static String readHttpRequest(InputStream inputStream) throws IOException {
+        BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
+        StringBuilder requestBuilder = new StringBuilder();
+        String line;
+        while ((line = reader.readLine()) != null) {
+            requestBuilder.append(line).append("\r\n");
+            if (line.isEmpty()) {
+                break; // End of headers is marked by an empty line
+            }
+        }
+        if (requestBuilder.length() == 0) {
+            return null; // No request read, connection might be closed
+        }
+        return requestBuilder.toString();
     }
+
 
     private static String extractPath(String[] requestLines) {
         String path = "";
