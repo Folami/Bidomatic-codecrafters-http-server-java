@@ -8,12 +8,14 @@ import java.util.concurrent.Executors;
 import java.nio.charset.StandardCharsets;
 
 public class Main {
+    private static ExecutorService executor;
+
     public static void main(String[] args) {
         System.out.println("Logs from your program will appear here!");
         int port = 4221;
+        executor = Executors.newCachedThreadPool();
         try (ServerSocket serverSocket = new ServerSocket(port)) {
             serverSocket.setReuseAddress(true);
-            ExecutorService executor = Executors.newCachedThreadPool();
             while (true) {
                 try (Socket clientSocket = serverSocket.accept()) {
                     System.out.println("Accepted connection from " + clientSocket.getInetAddress() + ":" + clientSocket.getPort());
@@ -28,10 +30,8 @@ public class Main {
     }
 
     private static void handleClient(Socket clientSocket) {
-        try (
-                InputStream inputStream = clientSocket.getInputStream();
-                OutputStream outputStream = clientSocket.getOutputStream()
-            ) {
+        try (InputStream inputStream = clientSocket.getInputStream();
+             OutputStream outputStream = clientSocket.getOutputStream()) {
             String request = readRequest(inputStream);
             String[] requestLines = request.split("\r?\n");
             String path = extractPath(requestLines);
