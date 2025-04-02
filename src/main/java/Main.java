@@ -24,6 +24,7 @@ public class Main {
         }
     }
 
+
     private static void handleClient(Socket clientSocket) throws IOException {
         System.out.println("Accepted connection from " + clientSocket.getInetAddress() + ":" + clientSocket.getPort());
         String request = readRequest(clientSocket.getInputStream());
@@ -33,11 +34,13 @@ public class Main {
         sendResponse(clientSocket.getOutputStream(), response);
     }
 
+
     private static String readRequest(InputStream inputStream) throws IOException {
         byte[] buffer = new byte[1024];
         int bytesRead = inputStream.read(buffer);
         return new String(buffer, 0, bytesRead);
     }
+
 
     private static String extractPath(String request) {
         // Split the request into lines (using CRLF as the separator).
@@ -53,6 +56,7 @@ public class Main {
         return "";
     }
 
+
     private static String createResponse(String path) {
         String response = "";
         // Return 200 OK if the path is "/" or "/index.html"; 404 otherwise.
@@ -62,7 +66,6 @@ public class Main {
             // Extract the string following "/echo/"
             String echoString = path.substring("/echo/".length());
             // Determine byte length of body (assumes UTF-8 encoding).
-            int contentLength = echoString.getBytes("UTF-8").length;
             // Build response with required headers.
             response = "HTTP/1.1 200 OK\r\n";
             response += "Content-Type: text/plain\r\n";
@@ -76,8 +79,9 @@ public class Main {
         }
     }
 
+
     private static void sendResponse(OutputStream outputStream, String response) throws IOException {
-        outputStream.write(response.getBytes("UTF-8"));
+        outputStream.write(response.getBytes(StandardCharsets.UTF_8));
         outputStream.flush();
     }
 }
