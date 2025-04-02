@@ -1,15 +1,15 @@
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.ServerSocket;
-import java.net.Socket;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.io.BufferedReader; 
+import java.io.IOException; 
+import java.io.InputStream; 
+import java.io.InputStreamReader; 
+import java.io.OutputStream; 
+import java.net.ServerSocket; 
+import java.net.Socket; 
+import java.util.concurrent.ExecutorService; 
+import java.util.concurrent.Executors; 
 import java.nio.charset.StandardCharsets;
 
-public class Main {
+public class Main { 
     private static ExecutorService executor;
 
     public static void main(String[] args) {
@@ -19,12 +19,12 @@ public class Main {
         try (ServerSocket serverSocket = new ServerSocket(port)) {
             serverSocket.setReuseAddress(true);
             while (true) {
-                try (Socket clientSocket = serverSocket.accept()) {
-                    System.out.println("Accepted connection from " + clientSocket.getInetAddress() + ":" + clientSocket.getPort());
-                    executor.execute(() -> handleClient(clientSocket));
-                } catch (IOException e) {
-                    System.err.println("Error handling client: " + e.getMessage());
-                }
+                // Accept the client connection without using try-with-resources so that
+                // it remains open for the handling thread.
+                Socket clientSocket = serverSocket.accept();
+                System.out.println("Accepted connection from " 
+                        + clientSocket.getInetAddress() + ":" + clientSocket.getPort());
+                executor.execute(() -> handleClient(clientSocket));
             }
         } catch (IOException e) {
             System.err.println("Error starting server: " + e.getMessage());
@@ -32,12 +32,15 @@ public class Main {
     }
 
     private static void handleClient(Socket clientSocket) {
-        try (InputStream inputStream = clientSocket.getInputStream();
-             OutputStream outputStream = clientSocket.getOutputStream()) {
+        // Use try-with-resources to ensure the socket and its streams are closed after handling.
+        try (Socket socket = clientSocket;
+            InputStream inputStream = socket.getInputStream();
+            OutputStream outputStream = socket.getOutputStream()) {
+            
             String request = readHttpRequest(inputStream);
             if (request == null) {
                 System.err.println("Error reading request, connection closed prematurely.");
-                return; // Exit if request is null (error in reading)
+                return;
             }
             String[] requestLines = request.split("\r?\n");
             String path = extractPath(requestLines);
@@ -49,23 +52,23 @@ public class Main {
         }
     }
 
-
+    // Reads the HTTP request line by line until an empty line is encountered,
+    // signifying the end of HTTP headers.
     private static String readHttpRequest(InputStream inputStream) throws IOException {
         BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
         StringBuilder requestBuilder = new StringBuilder();
         String line;
         while ((line = reader.readLine()) != null) {
             requestBuilder.append(line).append("\r\n");
-            if (line.isEmpty()) {
-                break; // End of headers is marked by an empty line
+            if (line.trim().isEmpty()) {  // End of headers
+                break;
             }
         }
         if (requestBuilder.length() == 0) {
-            return null; // No request read, connection might be closed
+            return null;
         }
         return requestBuilder.toString();
     }
-
 
     private static String extractPath(String[] requestLines) {
         String path = "";
@@ -80,33 +83,35 @@ public class Main {
     }
 
     private static String createResponse(String path, String[] requestLines) {
-        String response = "";
+        String response;
         if (path.equals("/") || path.equals("/index.html")) {
             response = "HTTP/1.1 200 OK\r\n\r\n";
         } else if (path.startsWith("/echo/")) {
             String echoString = path.substring("/echo/".length());
             int contentLength = echoString.getBytes().length;
-            response = "HTTP/1.1 200 OK\r\n";
-            response += "Content-Type: text/plain\r\n";
-            response += "Content-Length: " + contentLength + "\r\n";
-            response += "\r\n";
-            response += echoString;
+            response = "HTTP/1.1 200 OK\r\n" +
+                    "Content-Type: text/plain\r\n" +
+                    "Content-Length: " + contentLength + "\r\n" +
+                    "\r\n" +
+                    echoString;
         } else if (path.equals("/user-agent")) {
             String userAgent = "";
             for (String line : requestLines) {
                 if (line.isEmpty()) break;
                 if (line.toLowerCase().startsWith("user-agent:")) {
-                    String[] parts = line.split(":", 1);
-                    userAgent = parts[1].trim();
+                    String[] parts = line.split(":", 2);
+                    if(parts.length > 1){
+                        userAgent = parts[1].trim();
+                    }
                     break;
                 }
             }
             int contentLength = userAgent.getBytes().length;
-            response = "HTTP/1.1 200 OK\r\n";
-            response += "Content-Type: text/plain\r\n";
-            response += "Content-Length: " + contentLength + "\r\n";
-            response += "\r\n";
-            response += userAgent;
+            response = "HTTP/1.1 200 OK\r\n" +
+                    "Content-Type: text/plain\r\n" +
+                    "Content-Length: " + contentLength + "\r\n" +
+                    "\r\n" +
+                    userAgent;
         } else {
             response = "HTTP/1.1 404 Not Found\r\n\r\n";
         }
