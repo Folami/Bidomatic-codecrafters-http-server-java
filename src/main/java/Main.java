@@ -1,125 +1,263 @@
 import java.io.BufferedReader; 
+import java.io.ByteArrayOutputStream; 
+import java.io.File; 
+import java.io.FileInputStream; 
 import java.io.IOException; 
 import java.io.InputStream; 
 import java.io.InputStreamReader; 
 import java.io.OutputStream; 
 import java.net.ServerSocket; 
 import java.net.Socket; 
+import java.nio.charset.StandardCharsets; 
 import java.util.concurrent.ExecutorService; 
-import java.util.concurrent.Executors; 
-import java.nio.charset.StandardCharsets;
+import java.util.concurrent.Executors;
 
 public class Main { 
-    private static ExecutorService executor;
+    // Executor for handling clients concurrently.
+    private static ExecutorService executor = Executors.newCachedThreadPool();
+    // Files directory as provided by the --directory flag.
+    private static File filesDirectory = null;
+
+    // Simple container for the HTTP method and path.
+    private static class RequestInfo {
+        String method;
+        String path;
+        String[] requestLines;
+        
+        RequestInfo(String method, String path, String[] requestLines) {
+            this.method = method;
+            this.path = path;
+            this.requestLines = requestLines;
+        }
+    }
+
 
     public static void main(String[] args) {
         System.out.println("Logs from your program will appear here!");
-        int port = 4221;
-        executor = Executors.newCachedThreadPool();
+        parseCommandLineArgs(args); 
+        int port = 4221;       
+        plugClient(port);
+    }
+
+
+    private static void parseCommandLineArgs(String[] args) {
+        // Parse command-line args to get the --directory flag.
+        try {
+            for (int i = 0; i < args.length; i++) {
+                if ("--directory".equals(args[i]) && i + 1 < args.length) {
+                    filesDirectory = new File(args[i + 1]);
+                    if (!filesDirectory.exists() || !filesDirectory.isDirectory()) {
+                        System.err.println("Error: Provided directory does not exist or is not valid.");
+                        System.exit(1);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Error parsing command-line arguments: " + e.getMessage());
+            System.exit(1);
+        }
+    }
+
+
+    private static void plugClient(int port) {
         try (ServerSocket serverSocket = new ServerSocket(port)) {
             serverSocket.setReuseAddress(true);
             while (true) {
-                // Accept the client connection without using try-with-resources so that
-                // it remains open for the handling thread.
+                // Accept without auto-closing socket.
                 Socket clientSocket = serverSocket.accept();
                 System.out.println("Accepted connection from " 
-                        + clientSocket.getInetAddress() + ":" + clientSocket.getPort());
+                    + clientSocket.getInetAddress() + ":" + clientSocket.getPort());
                 executor.execute(() -> handleClient(clientSocket));
             }
         } catch (IOException e) {
             System.err.println("Error starting server: " + e.getMessage());
-        }
+        }    
     }
 
+
     private static void handleClient(Socket clientSocket) {
-        // Use try-with-resources to ensure the socket and its streams are closed after handling.
+        // Use try-with-resources to ensure the thread manages socket closing.
         try (Socket socket = clientSocket;
             InputStream inputStream = socket.getInputStream();
-            OutputStream outputStream = socket.getOutputStream()) {
-            
-            String request = readHttpRequest(inputStream);
-            if (request == null) {
+            OutputStream outputStream = socket.getOutputStream();
+            BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))
+        ) {
+            // 1. Read the HTTP request headers.
+            String[] requestLines = readHttpRequest(reader);
+            if (requestLines == null || requestLines.length == 0) {
                 System.err.println("Error reading request, connection closed prematurely.");
                 return;
             }
-            String[] requestLines = request.split("\r?\n");
-            String path = extractPath(requestLines);
-            System.out.println("Requested path: " + path);
-            String response = createResponse(path, requestLines);
+            // 2. Extract HTTP method & path from the request-line.
+            RequestInfo reqInfo = extractPath(requestLines);
+            System.out.println("Method: " + reqInfo.method + " Path: " + reqInfo.path);
+            // 3. Create full HTTP response as a byte array.
+            byte[] response = createResponse(reqInfo);
+            // 4. Send the response to the client.
             sendResponse(outputStream, response);
         } catch (IOException e) {
             System.err.println("Error handling client: " + e.getMessage());
         }
     }
 
-    // Reads the HTTP request line by line until an empty line is encountered,
-    // signifying the end of HTTP headers.
-    private static String readHttpRequest(InputStream inputStream) throws IOException {
-        BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
-        StringBuilder requestBuilder = new StringBuilder();
+
+    // Reads the HTTP request (header lines) until an empty line is found.
+    private static String[] readHttpRequest(BufferedReader reader) throws IOException {
         String line;
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
         while ((line = reader.readLine()) != null) {
-            requestBuilder.append(line).append("\r\n");
-            if (line.trim().isEmpty()) {  // End of headers
+            baos.write(line.getBytes(StandardCharsets.UTF_8));
+            baos.write("\r\n".getBytes(StandardCharsets.UTF_8));
+            if (line.trim().isEmpty()) {  // End of headers.
                 break;
             }
         }
-        if (requestBuilder.length() == 0) {
-            return null;
+        String request = baos.toString(StandardCharsets.UTF_8.name());
+        if (request.isEmpty()) {
+            return new String[0];
         }
-        return requestBuilder.toString();
+        // Split on CRLF or LF.
+        return request.split("\r?\n");
     }
 
-    private static String extractPath(String[] requestLines) {
+
+    // Extract the request method and path from the first line (request-line).
+    private static RequestInfo extractPath(String[] requestLines) {
+        String method = "";
         String path = "";
         if (requestLines.length > 0) {
-            String requestLine = requestLines[0];
-            String[] parts = requestLine.split(" ");
+            String[] parts = requestLines[0].split(" ");
             if (parts.length >= 2) {
+                method = parts[0].toUpperCase();
                 path = parts[1].trim();
             }
         }
-        return path;
+        return new RequestInfo(method, path, requestLines);
     }
 
-    private static String createResponse(String path, String[] requestLines) {
-        String response;
-        if (path.equals("/") || path.equals("/index.html")) {
-            response = "HTTP/1.1 200 OK\r\n\r\n";
-        } else if (path.startsWith("/echo/")) {
-            String echoString = path.substring("/echo/".length());
-            int contentLength = echoString.getBytes().length;
-            response = "HTTP/1.1 200 OK\r\n" +
-                    "Content-Type: text/plain\r\n" +
-                    "Content-Length: " + contentLength + "\r\n" +
-                    "\r\n" +
-                    echoString;
-        } else if (path.equals("/user-agent")) {
-            String userAgent = "";
-            for (String line : requestLines) {
-                if (line.isEmpty()) break;
-                if (line.toLowerCase().startsWith("user-agent:")) {
-                    String[] parts = line.split(":", 2);
-                    if(parts.length > 1){
-                        userAgent = parts[1].trim();
-                    }
-                    break;
-                }
-            }
-            int contentLength = userAgent.getBytes().length;
-            response = "HTTP/1.1 200 OK\r\n" +
-                    "Content-Type: text/plain\r\n" +
-                    "Content-Length: " + contentLength + "\r\n" +
-                    "\r\n" +
-                    userAgent;
-        } else {
-            response = "HTTP/1.1 404 Not Found\r\n\r\n";
+
+    // Creates a response based on the request info and headers.
+    private static byte[] createResponse(RequestInfo reqInfo) {
+        ByteArrayOutputStream responseStream = new ByteArrayOutputStream();
+        try {
+            handleEndpoints(reqInfo, responseStream);
+        } catch (IOException e) {
+            String errorResponse = "HTTP/1.1 500 Internal Server Error\r\n\r\n";
+            return errorResponse.getBytes(StandardCharsets.UTF_8);
         }
-        return response;
+        return responseStream.toByteArray();
     }
 
-    private static void sendResponse(OutputStream outputStream, String response) throws IOException {
-        outputStream.write(response.getBytes(StandardCharsets.UTF_8));
+
+    // Determines which endpoint to call based on the request info and writes the response to the stream.
+    private static void handleEndpoints(RequestInfo reqInfo, ByteArrayOutputStream responseStream) throws IOException {
+        String method = reqInfo.method;
+        String path = reqInfo.path;
+        if (path.equals("/") || path.equals("/index.html")) {
+            handleRootEndpoint(responseStream);
+        } else if (path.startsWith("/echo/")) {
+            handleEchoEndpoint(path, responseStream);
+        } else if (path.equals("/user-agent")) {
+            handleUserAgentEndpoint(reqInfo.requestLines, responseStream);
+        } else if (path.startsWith("/files/")) {
+            handleFilesEndpoint(reqInfo, responseStream);
+        } else {
+            // Unknown resource.
+            String response = "HTTP/1.1 404 Not Found\r\n\r\n";
+            responseStream.write(response.getBytes(StandardCharsets.UTF_8));
+        }
+    }
+
+
+    private static void handleRootEndpoint(ByteArrayOutputStream responseStream) throws IOException {
+        String response = "HTTP/1.1 200 OK\r\n\r\n";
+        responseStream.write(response.getBytes(StandardCharsets.UTF_8));
+    }
+
+
+    private static void handleEchoEndpoint(String path, ByteArrayOutputStream responseStream) throws IOException {
+        String echoBody = path.substring("/echo/".length());
+        byte[] echoBytes = echoBody.getBytes(StandardCharsets.UTF_8);
+        String responseHeader = "HTTP/1.1 200 OK\r\n";
+        responseHeader += "Content-Type: text/plain\r\n";
+        responseHeader += "Content-Length: " + echoBytes.length + "\r\n";
+        responseHeader += "\r\n";
+        responseStream.write(responseHeader.getBytes(StandardCharsets.UTF_8));
+        responseStream.write(echoBytes);
+    }
+
+
+    private static void handleUserAgentEndpoint(String[] requestLines, ByteArrayOutputStream responseStream) throws IOException {
+        String userAgent = "";
+        for (int i = 1; i < requestLines.length; i++) {
+            String header = requestLines[i];
+            if (header.isEmpty())
+                break;
+            if (header.toLowerCase().startsWith("user-agent:")) {
+                String[] headerParts = header.split(":", 2);
+                if (headerParts.length > 1) {
+                    userAgent = headerParts[1].trim();
+                }
+                break;
+            }
+        }
+        byte[] uaBytes = userAgent.getBytes(StandardCharsets.UTF_8);
+        String responseHeader = "HTTP/1.1 200 OK\r\n";
+        responseHeader += "Content-Type: text/plain\r\n";
+        responseHeader += "Content-Length: " + uaBytes.length + "\r\n";
+        responseHeader += "\r\n";
+        responseStream.write(responseHeader.getBytes(StandardCharsets.UTF_8));
+        responseStream.write(uaBytes);
+    }
+
+
+    private static void handleFilesEndpoint(RequestInfo reqInfo, ByteArrayOutputStream responseStream) throws IOException {
+        String method = reqInfo.method;
+        String path = reqInfo.path;
+        if (filesDirectory == null) {
+            String response = "HTTP/1.1 500 Internal Server Error\r\n\r\n";
+            responseStream.write(response.getBytes(StandardCharsets.UTF_8));
+            return;
+        }
+        String filename = path.substring("/files/".length());
+        File file = new File(filesDirectory, filename);
+        if ("GET".equals(method)) {
+            if (file.exists() && file.isFile()) {
+                byte[] fileBytes = readFileBytes(file);
+                String responseHeader = "HTTP/1.1 200 OK\r\n";
+                responseHeader += "Content-Type: application/octet-stream\r\n";
+                responseHeader += "Content-Length: " + fileBytes.length + "\r\n";
+                responseHeader += "\r\n";
+                responseStream.write(responseHeader.getBytes(StandardCharsets.UTF_8));
+                responseStream.write(fileBytes);
+            } else {
+                String response = "HTTP/1.1 404 Not Found\r\n\r\n";
+                responseStream.write(response.getBytes(StandardCharsets.UTF_8));
+            }
+        } else {
+            String response = "HTTP/1.1 405 Method Not Allowed\r\n\r\n";
+            responseStream.write(response.getBytes(StandardCharsets.UTF_8));
+        }
+    }
+
+
+    // Reads the entire file into a byte array.
+    private static byte[] readFileBytes(File file) throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (FileInputStream fis = new FileInputStream(file)) {
+            byte[] buffer = new byte[4096];
+            int n;
+            while ((n = fis.read(buffer)) != -1) {
+                baos.write(buffer, 0, n);
+            }
+        }
+        return baos.toByteArray();
+    }
+
+
+    // Writes the response to the client's output stream.
+    private static void sendResponse(OutputStream outputStream, byte[] response) throws IOException {
+        outputStream.write(response);
         outputStream.flush();
     }
 }
