@@ -3,6 +3,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.nio.charset.StandardCharsets;
 
 public class Main {
@@ -11,9 +13,11 @@ public class Main {
         int port = 4221;
         try (ServerSocket serverSocket = new ServerSocket(port)) {
             serverSocket.setReuseAddress(true);
+            ExecutorService executor = Executors.newCachedThreadPool();
             while (true) {
                 try (Socket clientSocket = serverSocket.accept()) {
-                    handleClient(clientSocket);
+                    System.out.println("Accepted connection from " + clientSocket.getInetAddress() + ":" + clientSocket.getPort());
+                    executor.execute(() -> handleClient(clientSocket));
                 } catch (IOException e) {
                     System.err.println("Error handling client: " + e.getMessage());
                 }
@@ -23,15 +27,20 @@ public class Main {
         }
     }
 
-    private static void handleClient(Socket clientSocket) throws IOException {
-        System.out.println("Accepted connection from " + clientSocket.getInetAddress() + ":" + clientSocket.getPort());
-        String request = readRequest(clientSocket.getInputStream());
-        String[] requestLines = request.split("\r?\n");
-        String path = extractPath(requestLines);
-        System.out.println("Requested path: " + path);
-        String response = createResponse(path, requestLines);
-        System.out.println("Response: " + response);
-        sendResponse(clientSocket.getOutputStream(), response);
+    private static void handleClient(Socket clientSocket) {
+        try (
+                InputStream inputStream = clientSocket.getInputStream();
+                OutputStream outputStream = clientSocket.getOutputStream()
+            ) {
+            String request = readRequest(inputStream);
+            String[] requestLines = request.split("\r?\n");
+            String path = extractPath(requestLines);
+            System.out.println("Requested path: " + path);
+            String response = createResponse(path, requestLines);
+            sendResponse(outputStream, response);
+        } catch (IOException e) {
+            System.err.println("Error handling client: " + e.getMessage());
+        }
     }
 
     private static String readRequest(InputStream inputStream) throws IOException {
@@ -69,7 +78,7 @@ public class Main {
             for (String line : requestLines) {
                 if (line.isEmpty()) break;
                 if (line.toLowerCase().startsWith("user-agent:")) {
-                    String[] parts = line.split(":");
+                    String[] parts = line.split(":", 1);
                     userAgent = parts[1].trim();
                     break;
                 }
