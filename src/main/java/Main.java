@@ -96,7 +96,7 @@ public class Main {
             // 2. Extract HTTP method & path from the request-line.
             RequestInfo reqInfo = extractPath(requestLines);
             System.out.println("Method: " + reqInfo.method + " Path: " + reqInfo.path);
-            handlePostMethod(requestLines, reqInfo);            
+            handlePostMethod(requestLines, reqInfo, reader);
             // 3. Create full HTTP response as a byte array.
             byte[] response = createResponse(reqInfo);
             // 4. Send the response to the client.
@@ -142,7 +142,7 @@ public class Main {
     }
 
 
-    private static void handlePostMethod(String[] requestLines, RequestInfo reqInfo) {
+    private static void handlePostMethod(String[] requestLines, RequestInfo reqInfo, BufferedReader reader) {
         // 2.1 If the request is a POST to /files, read the request body.
         if ("POST".equals(reqInfo.method) && reqInfo.path.startsWith("/files/")) {
             int contentLength = 0;
