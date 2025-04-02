@@ -31,7 +31,7 @@ public class Main {
         System.out.println("Accepted connection from " + clientSocket.getInetAddress() + ":" + clientSocket.getPort());
         String request = readRequest(clientSocket.getInputStream());
         // Split the request into lines (using CRLF as the separator).
-        String[] requestLines = request.split("\r\n");
+        String[] requestLines = request.split("\r?\n");
         String path = extractPath(requestLines);
         System.out.println("Requested path: " + path);
         String response = createResponse(path, requestLines);
@@ -75,6 +75,7 @@ public class Main {
             response += echoString;
             return response;
         } else if (path.startsWith("/user-agent")) {
+            String userAgent = "";
             String[] userAgentLines = requestLines[1];
             // Iterate over header lines (everything after the request line).
             for (String line : userAgentLines) {
@@ -85,14 +86,14 @@ public class Main {
                 if (line.toLowerCase().startsWith("user-agent:")) {
                     // Split on ":", then strip whitespace.
                     String[] parts = line.split(":");
-                    String userAgent = parts[1].trim();
+                    userAgent = parts[1].trim();
                     break;
                 }
             }
             int contentLength = userAgent.getBytes().length;
             response = "HTTP/1.1 200 OK\r\n";
             response += "Content-Type: text/plain\r\n";
-            response += "Content-Length: " + content_length + "\r\n";
+            response += "Content-Length: " + contentLength + "\r\n";
             response += "\r\n";
         } else {
             response = "HTTP/1.1 404 Not Found\r\n\r\n";
