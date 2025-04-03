@@ -1,4 +1,5 @@
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 
 /**
 HttpResponse collects content and headers into a byte array.
