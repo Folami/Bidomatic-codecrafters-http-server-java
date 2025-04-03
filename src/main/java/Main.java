@@ -26,7 +26,7 @@ public class Main {
     }
 
     public static void main(String[] args) {
-        System.out.println("Logs from your program will appear here!");
+        // System.out.println("Logs from your program will appear here!");
         parseCommandLineArgs(args);
         int port = 4221;
         plugClient(port);
@@ -56,8 +56,9 @@ public class Main {
             while(true) {
                 // Accept without auto-closing socket.
                 Socket clientSocket = serverSocket.accept();
-                String socketDetails = "Accepted connection from " 
-                        + clientSocket.getInetAddress() + ":" + clientSocket.getPort();
+                String socketDetails = "Accepted connection from ";
+                socketDetails += clientSocket.getInetAddress();
+                socketDetails += ":" + clientSocket.getPort();
                 System.out.println(socketDetails);
                 executor.execute(() -> handleClient(clientSocket));
             }
@@ -82,10 +83,12 @@ public class Main {
             }
             // 2. Extract HTTP method & path from the request-line.
             RequestInfo reqInfo = extractPath(requestLines);
-            System.out.println("Method: " + reqInfo.method + ", Path: " + reqInfo.path);
+            String httpMethod = reqInfo.method;
+            String httpPath = reqInfo.path;
+            System.out.println("Method: " + httpMethod + ", Path: " + httpPath);
             // 2.1 If the request is a POST to /files, read the body.
-            if (reqInfo.method.equals("POST") && reqInfo.path.startsWith("/files/")) {
-                handlePostMethod(requestLines, reqInfo, reader);
+            if (httpMethod.equals("POST") && httpPath.startsWith("/files/")) {
+                handleHttpPostToFiles(requestLines, reqInfo, reader);
             }
             // 3. Create full HTTP response as a byte array.
             byte[] response = createResponse(reqInfo);
@@ -98,17 +101,17 @@ public class Main {
 
     // Reads HTTP header lines until an empty line and returns an array of header lines.
     private static String[] readHttpRequest(BufferedReader reader) throws IOException {
-        String line;
+        String line = "";
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         while ((line = reader.readLine()) != null) {
             baos.write(line.getBytes(StandardCharsets.UTF_8));
             baos.write("\r\n".getBytes(StandardCharsets.UTF_8));
-            if(line.trim().isEmpty()) {  // End of headers.
+            if (line.trim().isEmpty()) {  // End of headers.
                 break;
             }
         }
         String request = baos.toString(StandardCharsets.UTF_8.name());
-        if(request.isEmpty()){
+        if (request.isEmpty()){
             return new String[0];
         }
         // Split on CRLF or LF.
@@ -130,13 +133,14 @@ public class Main {
     }
 
     // Reads the POST body for /files endpoints.
-    private static void handlePostMethod(String[] requestLines, RequestInfo reqInfo, BufferedReader reader) throws IOException {
+    private static void handleHttpPostToFiles(String[] requestLines, RequestInfo reqInfo, BufferedReader reader) throws IOException {
         int contentLength = 0;
         // Find Content-Length header.
-        for(String header : requestLines) {
-            if(header.toLowerCase().startsWith("content-length:")) {
+        for (String header : requestLines) {
+            if (header.toLowerCase().startsWith("content-length:")) {
                 try {
-                    contentLength = Integer.parseInt(header.split(":", 2)[1].trim());
+                    String contentHeader = header.split(":", 2)[1];
+                    contentLength = Integer.parseInt(contentHeader.trim());
                 } catch(NumberFormatException nfe) {
                     contentLength = 0;
                 }
@@ -165,8 +169,8 @@ public class Main {
 
     // Dispatches the request to the appropriate endpoint handler.
     private static void handleEndpoints(RequestInfo reqInfo, ByteArrayOutputStream responseStream) throws IOException {
-        String method = reqInfo.method;
         String path = reqInfo.path;
+        String method = reqInfo.method;
         if(path.equals("/") || path.equals("/index.html")) {
             handleRootEndpoint(responseStream);
         } else if(path.startsWith("/echo/")) {
@@ -201,15 +205,30 @@ public class Main {
         }
         headerBuilder.append("Content-Length: " + echoBytes.length + "\r\n");
         headerBuilder.append("\r\n");
-        responseStream.write(headerBuilder.toString().getBytes(StandardCharsets.UTF_8));
+        byte[] headerBytes = headerBuilder.toString().getBytes(StandardCharsets.UTF_8);
+        responseStream.write(headerBytes);
         responseStream.write(echoBytes);
     }
+
+
+    // Helper to check whether the client Accept-Encoding header mentions gzip.
+    private static boolean clientAcceptsGzip(String[] requestLines) {
+        for (String header : requestLines) {
+            if(header.toLowerCase().startsWith("accept-encoding:")) {
+                String encodings = header.substring("accept-encoding:".length()).trim().toLowerCase();
+                if(encodings.contains("gzip")) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
 
     // Handles the /user-agent endpoint.
     private static void handleUserAgentEndpoint(String[] requestLines, ByteArrayOutputStream responseStream) throws IOException {
         String userAgent = "";
-        for (int i = 1; i < requestLines.length; i++) {
-            String header = requestLines[i];
+        for (String header : requestLines) {
             if(header.isEmpty())
                 break;
             if(header.toLowerCase().startsWith("user-agent:")) {
@@ -235,19 +254,20 @@ public class Main {
 
     // Handles the /files endpoint for both GET and POST.
     private static void handleFilesEndpoint(RequestInfo reqInfo, ByteArrayOutputStream responseStream) throws IOException {
-        String httpMethod = reqInfo.method;
-        String httpPath = reqInfo.path;
+        String reqMethod = reqInfo.method;
+        String reqPath = reqInfo.path;
         if(filesDirectory == null) {
             String response = "HTTP/1.1 500 Internal Server Error\r\n\r\n";
-            responseStream.write(response.getBytes(StandardCharsets.UTF_8));
+            String responseBytes = response.getBytes(StandardCharsets.UTF_8);
+            responseStream.write(responseBytes);
             return;
         }
-        String filename = httpPath.substring("/files/".length());
+        String filename = reqPath.substring("/files/".length());
         File file = new File(filesDirectory, filename);
-        if("GET".equals(httpMethod)) {
-            handleHttpGetMethod(file, responseStream);
-        } else if("POST".equals(httpMethod)) {
-            handleHttpPostMethod(file, reqInfo, responseStream);
+        if("GET".equals(reqMethod)) {
+            handleGetRequest(file, responseStream);
+        } else if("POST".equals(reqMethod)) {
+            handlePostRequest(file, reqInfo, responseStream);
         } else {
             String response = "HTTP/1.1 405 Method Not Allowed\r\n\r\n";
             responseStream.write(response.getBytes(StandardCharsets.UTF_8));
@@ -255,13 +275,13 @@ public class Main {
     }
 
     // Handles the HTTP GET for a file.
-    private static void handleHttpGetMethod(File file, ByteArrayOutputStream responseStream) throws IOException {
+    private static void handleGetRequest(File file, ByteArrayOutputStream responseStream) throws IOException {
         if(file.exists() && file.isFile()) {
             byte[] fileBytes = readFileBytes(file);
-            String responseHeader = "HTTP/1.1 200 OK\r\n" +
-                                    "Content-Type: application/octet-stream\r\n" +
-                                    "Content-Length: " + fileBytes.length + "\r\n" +
-                                    "\r\n";
+            String responseHeader = "HTTP/1.1 200 OK\r\n";
+            responseHeader += "Content-Type: application/octet-stream\r\n";
+            responseHeader += "Content-Length: " + fileBytes.length + "\r\n";
+            responseHeader += "\r\n";
             responseStream.write(responseHeader.getBytes(StandardCharsets.UTF_8));
             responseStream.write(fileBytes);
         } else {
@@ -271,7 +291,7 @@ public class Main {
     }
 
     // Handles the HTTP POST for a file.
-    private static void handleHttpPostMethod(File file, RequestInfo reqInfo, ByteArrayOutputStream responseStream) throws IOException {
+    private static void handlePostRequest(File file, RequestInfo reqInfo, ByteArrayOutputStream responseStream) throws IOException {
         try (FileOutputStream fos = new FileOutputStream(file)) {
             fos.write(reqInfo.body.getBytes(StandardCharsets.UTF_8));
         } catch(IOException ioe) {
@@ -283,18 +303,6 @@ public class Main {
         responseStream.write(response.getBytes(StandardCharsets.UTF_8));
     }
 
-    // Helper to check whether the client Accept-Encoding header mentions gzip.
-    private static boolean clientAcceptsGzip(String[] requestLines) {
-        for (String header : requestLines) {
-            if(header.toLowerCase().startsWith("accept-encoding:")) {
-                String encodings = header.substring("accept-encoding:".length()).trim().toLowerCase();
-                if(encodings.contains("gzip")) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
 
     // Reads a file fully and returns its contents as a byte array.
     private static byte[] readFileBytes(File file) throws IOException {
