@@ -1,3 +1,5 @@
+import java.io.*;
+
 /**
 HttpResponse collects content and headers into a byte array.
 */

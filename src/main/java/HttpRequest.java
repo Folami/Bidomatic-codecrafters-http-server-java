@@ -1,3 +1,6 @@
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+
 /**
 HttpRequest encapsulates an HTTP request header and optional body.
 */
