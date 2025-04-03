@@ -258,7 +258,7 @@ public class Main {
         String reqPath = reqInfo.path;
         if(filesDirectory == null) {
             String response = "HTTP/1.1 500 Internal Server Error\r\n\r\n";
-            String responseBytes = response.getBytes(StandardCharsets.UTF_8);
+            byte[] responseBytes = response.getBytes(StandardCharsets.UTF_8);
             responseStream.write(responseBytes);
             return;
         }
