@@ -93,7 +93,7 @@ class HttpServer {
                 gzipStream.write(bodyBytes);
             }
             byte[] compressedBody = compressedBytes.toByteArray();
-            // Build the response headers
+            // Build the response headers.
             response.write("HTTP/1.1 200 OK\r\n");
             response.write("Content-Type: text/plain\r\n");
             response.write("Content-Encoding: gzip\r\n");
