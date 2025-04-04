@@ -6,12 +6,13 @@ ClientHandler is responsible for reading
 the request from a socket, processing it,
 and writing the response.
 */
-class ClientHandler implements Runnable {
+class HttpClient implements Runnable {
     private final Socket clientSocket;
     private final HttpServer server;
 
-    public ClientHandler(Socket socket, HttpServer server) {
-        this.clientSocket = socket; this.server = server;
+    public HttpClient(Socket socket, HttpServer server) {
+        this.clientSocket = socket;
+        this.server = server;
     }
 
 

@@ -17,49 +17,6 @@ class HttpRequest {
     }
 
 
-    public String getMethod() {
-        return method;
-    }
-
-
-    public String getPath() {
-        return path;
-    }
-
-
-    public String[] getRequestLines() {
-        return requestLines;
-    }
-
-
-    public String getBody() {
-        return body;
-    }
-
-
-    public void readBody(BufferedReader reader) throws IOException {
-        int contentLength = 0;
-        for (String header : requestLines) {
-            if (header.toLowerCase().startsWith("content-length:")) {
-                try {
-                    String lengthStr = header.split(":", 2)[1].trim();
-                    contentLength = Integer.parseInt(lengthStr);
-                } catch (NumberFormatException nfe) {
-                    contentLength = 0;
-                }
-                break;
-            }
-        }
-        if (contentLength > 0) {
-            char[] bodyChars = new char[contentLength];
-            int read = reader.read(bodyChars, 0, contentLength);
-            if (read > 0) {
-                body = new String(bodyChars, 0, read);
-            }
-        }
-    }
-
-
     /**
     Reads HTTP header lines until an empty line is encountered.
     Returns an HttpRequest instance or null if nothing was read. 
@@ -93,6 +50,50 @@ class HttpRequest {
         return new HttpRequest(method, path, lines);
     }
 
+
+    public void readBody(BufferedReader reader) throws IOException {
+        int contentLength = 0;
+        for (String header : requestLines) {
+            if (header.toLowerCase().startsWith("content-length:")) {
+                try {
+                    String lengthStr = header.split(":", 2)[1].trim();
+                    contentLength = Integer.parseInt(lengthStr);
+                } catch (NumberFormatException nfe) {
+                    contentLength = 0;
+                }
+                break;
+            }
+        }
+        if (contentLength > 0) {
+            char[] bodyChars = new char[contentLength];
+            int read = reader.read(bodyChars, 0, contentLength);
+            if (read > 0) {
+                body = new String(bodyChars, 0, read);
+            }
+        }
+    }
+
+
+    public String getMethod() {
+        return method;
+    }
+
+
+    public String getPath() {
+        return path;
+    }
+
+
+    public String[] getRequestLines() {
+        return requestLines;
+    }
+
+
+    public String getBody() {
+        return body;
+    }
+
+
     /**
     Returns the value of the header with the given name 
     (case-insensitive), or "" if not found.
@@ -110,17 +111,15 @@ class HttpRequest {
         return "";
     }
 
-    /**
 
+    /**
     Checks if the Accept-Encoding header mentions gzip.
     */
     public boolean clientAcceptsGzip() {
         for (String header : requestLines) {
             if (header.toLowerCase().startsWith("accept-encoding:")) {
                 String encodings = header.substring("accept-encoding:".length()).trim().toLowerCase();
-                if (encodings.contains("gzip")) {
-                    return true;
-                }
+                return encodings.contains("gzip");
             }
         }
         return false;

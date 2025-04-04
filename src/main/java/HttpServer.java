@@ -4,6 +4,7 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.zip.GZIPOutputStream;  // Import the GZIPOutputStream
 
 /**
 
@@ -45,7 +46,7 @@ class HttpServer {
                 socketDetails += clientSocket.getInetAddress();
                 socketDetails += ":" + clientSocket.getPort();
                 System.out.println(socketDetails);
-                executor.execute(new ClientHandler(clientSocket, this));
+                executor.execute(new HttpClient(clientSocket, this));
             }
         } catch (IOException e) {
             System.err.println("Error starting server: " + e.getMessage());
@@ -79,18 +80,34 @@ class HttpServer {
 
 
     private void handleEchoEndpoint(HttpRequest request, HttpResponse response) throws IOException {
-        // Strip off the /echo/ prefix.
+        // Extract the string to echo from the path
         String echoBody = request.getPath().substring("/echo/".length());
         byte[] bodyBytes = echoBody.getBytes(StandardCharsets.UTF_8);
-        StringBuilder sb = new StringBuilder();
-        sb.append("HTTP/1.1 200 OK\r\n");
-        sb.append("Content-Type: text/plain\r\n");
-        if (request.clientAcceptsGzip()) {
-            sb.append("Content-Encoding: gzip\r\n");
+        // Check if the client accepts gzip encoding
+        String acceptEncoding = request.getHeader("Accept-Encoding");
+        boolean acceptsGzip = acceptEncoding != null && acceptEncoding.contains("gzip");
+        if (acceptsGzip) {
+            // Compress the body using GZIP
+            ByteArrayOutputStream compressedBytes = new ByteArrayOutputStream();
+            try (GZIPOutputStream gzipStream = new GZIPOutputStream(compressedBytes)) {
+                gzipStream.write(bodyBytes);
+            }
+            byte[] compressedBody = compressedBytes.toByteArray();
+            // Build the response headers
+            response.write("HTTP/1.1 200 OK\r\n");
+            response.write("Content-Type: text/plain\r\n");
+            response.write("Content-Encoding: gzip\r\n");
+            response.write("Content-Length: " + compressedBody.length + "\r\n\r\n");
+            // Write the compressed body to the response
+            response.write(compressedBody);
+        } else {
+            // Build the response headers for no compression
+            response.write("HTTP/1.1 200 OK\r\n");
+            response.write("Content-Type: text/plain\r\n");
+            response.write("Content-Length: " + bodyBytes.length + "\r\n\r\n");
+            // Write the body to the response
+            response.write(bodyBytes);
         }
-        sb.append("Content-Length: ").append(bodyBytes.length).append("\r\n\r\n");
-        response.write(sb.toString());
-        response.write(bodyBytes);
     }
 
 
